@@ -470,7 +470,6 @@ void CPI(Sim8085 * sim) {
 void BRANCH(Sim8085 * sim, int call) {
     int LB = sim->RAM[sim->PC++] & 0xFF;
     int MB = sim->RAM[sim->PC++] & 0xFF;
-
     if (call) {
         assert(sim->SP > 1);
         sim->RAM[--sim->SP] = (sim->PC >> 8) & 0xFF;
@@ -528,6 +527,32 @@ void BRANCH_SIGN(Sim8085 * sim, int v, int call) {
             sim->RAM[--sim->SP] = (sim->PC >> 0) & 0xFF;
         }
         sim->PC = GETADDRESS(MB, LB);
+    }
+}
+void BRANCH_TO_SERVICE_ROUTINE
+(Sim8085 * sim, int address) {
+    sim->RAM[--sim->SP] = (sim->PC >> 8) & 0xFF;
+    sim->RAM[--sim->SP] = (sim->PC >> 0) & 0xFF;
+    sim->PC = address;
+}
+void checkInterrupts(Sim8085 * sim) {
+    //enable interrupts priority_wise
+    if (sim->trap) {//non-maskable
+        BRANCH_TO_SERVICE_ROUTINE(sim, 0x24);
+        sim->trap = 0; //reset signal, naive method(needs a REDO)
+    } else if (sim->interrupts_enabled) {//maskable
+        //todo: enable nested interrupts
+        if (sim->rst7_5) {
+            if (sim->rst7_5_enable) BRANCH_TO_SERVICE_ROUTINE(sim, 0x3c);
+            sim->rst7_5 = 0;
+        } else if (sim->rst6_5) {
+            if (sim->rst6_5_enable) BRANCH_TO_SERVICE_ROUTINE(sim, 0x34);
+            sim->rst6_5 = 0;
+        } else if (sim->rst5_5) {
+            sim->rst5_5 = 0;
+            if (sim->rst5_5_enable) BRANCH_TO_SERVICE_ROUTINE(sim, 0x2c);
+            
+        }
     }
 }
 void RET(Sim8085 * sim) {
@@ -635,7 +660,13 @@ void OUT(Sim8085 * sim) {
     sim->IOPORTS[sim->RAM[sim->PC++] & 0XFF] = sim->REGISTER[GETREGCHAR('A')];
 }
 void SIM(Sim8085 * sim) {
-    
+    int accu = sim->REGISTER[GETREGCHAR('A')];    
+    if ((accu >> 4) & 1) sim->rst7_5 = 0; //reset rst 7.5 latch
+    if ((accu >> 3) & 1) {
+        sim->rst5_5_enable = !(accu & 1);
+        sim->rst6_5_enable = !((accu >> 1) & 1);
+        sim->rst7_5_enable = !((accu >> 2) & 1);
+    }
 }
 void EI(Sim8085 * sim) {
     sim->interrupts_enabled = 1;
@@ -733,6 +764,9 @@ void singlestep(Sim8085 * sim) {
     else if (is_ei(v)) EI(sim);
     else if (is_di(v)) DI(sim);
     else if (is_sim(v)) SIM(sim);
+
+    //interrupt check logic
+    checkInterrupts(sim);
 }
 void loadprogram(Sim8085 * sim, int start_addr, ProgramFile * program_file) {
     sim->lines.count = 0;
@@ -740,6 +774,8 @@ void loadprogram(Sim8085 * sim, int start_addr, ProgramFile * program_file) {
     sim->labels.count = 0;
     sim->byte_list.count = 0;
     sim->interrupts_enabled = 0;
+    sim->rst5_5_enable = sim->rst6_5_enable = sim->rst7_5_enable = 0;
+    sim->rst5_5 = sim->rst6_5 = sim->rst7_5 = sim->trap = 0;
     sim->HALT = 0;
     sim->PC = sim->START_ADDRESS = start_addr;
     sim->SP = 0xFFFF;

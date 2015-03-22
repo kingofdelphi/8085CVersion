@@ -11,10 +11,11 @@ char programpath[255];
 Sim8085 simulator;
 int program_loaded = 0;
 int program_execution = 0; //if simulator is in execution i.e. not in single step, used to identify if a separate thread
-                             //is being run
+                           //is being run
 pthread_mutex_t sim_mutex, broadcast_mutex;
 pthread_cond_t cpu_started = PTHREAD_COND_INITIALIZER;//to signal other devices if cpu has been started
 GtkWidget *window, *grid, *openBtn, * quitBtn, *toolbar, *view, * errorview;
+GtkWidget *strobe_btn;
 GtkTextBuffer *buffer;
 GtkTextBuffer *errorlog;
 //flags
@@ -63,7 +64,7 @@ const char * identifiers[] = {
     "DI", "EI", "SIM"
 };
 
-const char * registers[] = { "A", "B", "C", "D", "E", "H", "L", "SP" };
+const char * registers[] = { "A", "B", "C", "D", "E", "H", "L", "SP", "M" }; //for syntax highlighting
 int isregister(const char * s, int n) {
     for (int i = 0; i < sizeof(registers) / sizeof(*registers); ++i) {
         if (NSTRCMP(registers[i], s, n) == 0) return 1;
@@ -165,7 +166,6 @@ void openfiledialog() {
         reloadtextbuffer();
         g_free (filename);
     }
-
     gtk_widget_destroy (dialog);
 }
 void createinfolabels() {
@@ -417,6 +417,18 @@ void writetoio() {
     int value = strtoint(txt);
     simulator.IOPORTS[address] = value;
 }
+void trap_strobe() {
+    simulator.trap = 1;   
+}
+void rst5_5_strobe() {
+    simulator.rst5_5 = 1;   
+}
+void rst6_5_strobe() {
+    simulator.rst6_5 = 1;   
+}
+void rst7_5_strobe() {
+    simulator.rst7_5 = 1;   
+}
 int main (int   argc, char *argv[]) {
     gtk_init (&argc, &argv);
 
@@ -584,6 +596,18 @@ int main (int   argc, char *argv[]) {
     btn = gtk_button_new_with_label("To Memory");
     gtk_box_pack_start(GTK_BOX(buttonbox2), btn, 0, 0, 1);
     g_signal_connect(btn, "clicked", G_CALLBACK(writetomem), 0);
+    btn = gtk_button_new_with_label("Strobe Trap Pin");
+    gtk_box_pack_start(GTK_BOX(infobox), btn, 0, 0, 1);
+    g_signal_connect(btn, "clicked", G_CALLBACK(trap_strobe), (void*)0);
+    btn = gtk_button_new_with_label("Strobe 5.5 Pin");
+    gtk_box_pack_start(GTK_BOX(infobox), btn, 0, 0, 1);
+    g_signal_connect(btn, "clicked", G_CALLBACK(rst5_5_strobe), (void*)1);
+    btn = gtk_button_new_with_label("Strobe 6.5 Pin");
+    gtk_box_pack_start(GTK_BOX(infobox), btn, 0, 0, 1);
+    g_signal_connect(btn, "clicked", G_CALLBACK(rst6_5_strobe), (void*)2);
+    btn = gtk_button_new_with_label("Strobe 7.5 Pin");
+    gtk_box_pack_start(GTK_BOX(infobox), btn, 0, 0, 1);
+    g_signal_connect(btn, "clicked", G_CALLBACK(rst7_5_strobe), (void*)3);
 
     gtk_widget_set_hexpand(view, 1);
     gtk_widget_set_vexpand(view, 1);
@@ -591,7 +615,6 @@ int main (int   argc, char *argv[]) {
     pthread_mutex_init(&sim_mutex, 0);
     pthread_mutex_init(&broadcast_mutex, 0);
     g_timeout_add(10, idleupdate, 0);
-
     //connect ppi to simulator
     ppi_8255 ppi;
     connect_ppi(&ppi, &simulator, 10);

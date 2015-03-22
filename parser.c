@@ -39,7 +39,7 @@ int is_hex_char(char ch) {
 }
 //string must end with an H
 int inhex(const char * s, int n) {
-    if (s == 0 || n == 0 || s[n - 1] != 'H') return 0;
+    if (s == 0 || n == 0 || (s[n - 1] != 'H') && s[n - 1] != 'h') return 0;
     for (int i = 0; i < n - 1; ++i) if (!is_hex_char(s[i])) return 0;
     return 1;
 }

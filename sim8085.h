@@ -11,8 +11,10 @@ typedef struct {
     LabelList labels;
     ByteList byte_list;
     int HALT, interrupts_enabled;
-    int rst7_5, rst6_5, rst_5_5;//boolean values provides information whether
-                                //each interrupt pins are available
+    //boolean values provides information whether
+    //each interrupt pins are available
+    int rst7_5_enable, rst6_5_enable, rst5_5_enable;
+    int trap, rst7_5, rst6_5, rst5_5; //interrupt pins
 } Sim8085; ///struct end
 
 int GETHLADDRESS(Sim8085 * ) ;
@@ -112,6 +114,9 @@ void OUT(Sim8085 * );
 void singlestep(Sim8085 * );
 void loadprogram(Sim8085 *, int start_addr, ProgramFile * program);
 void stat(Sim8085 * );
+void BRANCH_TO_SERVICE_ROUTINE
+(Sim8085 * sim, int address);
+void checkInterrupts(Sim8085 * sim);
 
 int getIL(Sim8085 * sim);
 int readIO(Sim8085 * sim, int addr);
