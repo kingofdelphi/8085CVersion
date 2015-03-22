@@ -82,4 +82,6 @@ int is_rotright(int v);
 int is_ei(int v);
 int is_di(int v);
 int is_sim(int v);
+int is_rim(int v);
+int is_rst(int v);
 #endif

@@ -9,6 +9,12 @@ int is_di(int v) {
 int is_sim(int v) {
     return v == 0x30;
 }
+int is_rim(int v) {
+    return v == 0x20;
+}
+int is_rst(int v) {
+    return ((v >> 6) & 0x3) == 0x3 && (v & 7) == 7;
+}
 //
 
 int is_jnz(int v) {

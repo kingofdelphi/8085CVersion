@@ -11,10 +11,11 @@ typedef struct {
     LabelList labels;
     ByteList byte_list;
     int HALT, interrupts_enabled;
-    //boolean values provides information whether
+    //boolean values provide information whether
     //each interrupt pins are available
     int rst7_5_enable, rst6_5_enable, rst5_5_enable;
-    int trap, rst7_5, rst6_5, rst5_5; //interrupt pins
+    int trap, rst7_5, rst6_5, rst5_5, intr; //interrupt pins
+    int intr_opcode_latch; //the non_vectored_address i.e. provided by external devices, to run their own service routine
 } Sim8085; ///struct end
 
 int GETHLADDRESS(Sim8085 * ) ;
@@ -111,6 +112,10 @@ void RET_PARITY(Sim8085 * sim, int v);
 void RET_ZERO(Sim8085 * sim, int v);
 void IN(Sim8085 * );
 void OUT(Sim8085 * );
+void RIM(Sim8085 * );
+void SIM(Sim8085 * );
+void RST(Sim8085 * , int);
+
 void singlestep(Sim8085 * );
 void loadprogram(Sim8085 *, int start_addr, ProgramFile * program);
 void stat(Sim8085 * );

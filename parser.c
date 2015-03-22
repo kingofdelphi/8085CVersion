@@ -16,7 +16,8 @@ const char * ONE_BYTE[] = {
     "RET", "RLC", "RM", "RNC", "RNZ", "RP",
     "RPE", "RPO", "RRC", "RZ", "SBB", "SPHL",
     "STAX", "STC", "SUB", "XCHG", "XRA", "XTHL",
-    "EI", "DI", "SIM"//for interrupt handling
+    "EI", "DI", "SIM", "RIM",//for interrupt handling
+    "RST"
 };
 const char * TWO_BYTE[] = {
     "ACI", "ADI", "ANI", "CPI", "IN", "MVI",
@@ -39,11 +40,12 @@ int is_hex_char(char ch) {
 }
 //string must end with an H
 int inhex(const char * s, int n) {
-    if (s == 0 || n == 0 || (s[n - 1] != 'H') && s[n - 1] != 'h') return 0;
+    if (s == 0 || n <= 1 || (s[n - 1] != 'H') && s[n - 1] != 'h') return 0;
     for (int i = 0; i < n - 1; ++i) if (!is_hex_char(s[i])) return 0;
     return 1;
 }
 int is_valid_no(const char * s, int n) {
+    if (n == 0) return 0;
     for (int i = 0; i < n; ++i) if (!isdigit(s[i])) return 0;
     return 1;
 }
@@ -514,8 +516,26 @@ void inst_parse(const char * line, LabelList * labels, int * current_addr, int l
             addToList(byte_list, 0xf3, line_no, *current_addr);
         } else if (NSTRCMP("SIM", line + tok_s, tok_e - tok_s) == 0) {
             addToList(byte_list, 0x30, line_no, *current_addr);
+        } else if (NSTRCMP("RIM", line + tok_s, tok_e - tok_s) == 0) {
+            addToList(byte_list, 0x20, line_no, *current_addr);
+        } else if (NSTRCMP("RST", line + tok_s, tok_e - tok_s) == 0) { //unique instruction
+            gettoken(line, &marker, &tok_s, &tok_e);
+            int v;
+            if (inhex(line + tok_s, tok_e - tok_s)) {
+                v = hextodecimal(line + tok_s, tok_e - tok_s - 1);
+            } else if (is_valid_no(line + tok_s, tok_e - tok_s)) {
+                v = toint(line + tok_s, tok_e - tok_s, temp_error);
+                if (*temp_error) return ;
+            } else {
+                strcat(temp_error, "RST instruction operand is not a number");
+                return ;
+            }
+            if (v > 7) {
+                strcat(temp_error, "Invalid RST instruction, operand range is [0, 8)");
+                return ;
+            }
+            addToList(byte_list, (0x3 << 6) + (v << 3) + 7, line_no, *current_addr);
         }
-
     } else if (IS_TWO_BYTE_INST(line + tok_s, tok_e - tok_s)) {
         instruction_type = 2;
         if (NSTRCMP("ACI", line + tok_s, tok_e - tok_s) == 0)
@@ -553,6 +573,7 @@ void inst_parse(const char * line, LabelList * labels, int * current_addr, int l
             addToList(byte_list, 0xd6, line_no, *current_addr);
         else if (NSTRCMP("XRI", line + tok_s, tok_e - tok_s) == 0)
             addToList(byte_list, 0xee, line_no, *current_addr);
+        
         gettoken(line, &marker, &tok_s, &tok_e);
         if (tok_s == tok_e) {
             strcat(temp_error, "Second operand missing");

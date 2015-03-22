@@ -48,7 +48,7 @@ const char * identifiers[] = {
     "POP", "PUSH", "RAL", "RAR", "RC",
     "RET", "RLC", "RM", "RNC", "RNZ", "RP",
     "RPE", "RPO", "RRC", "RZ", "SBB", "SPHL",
-    "STAX", "STC", "SUB", "XCHG", "XRA", "XTHL",
+    "STAX", "STC", "SUB", "XCHG", "XRA", "XTHL", "RST", "DI", "EI", "SIM", "RIM",
 
     "ACI", "ADI", "ANI", "CPI", "IN", "MVI",
     "ORI", "OUT", "SBI", "SUI", "XRI", 
@@ -61,7 +61,7 @@ const char * identifiers[] = {
     "CALL", "CC", "CM", "CNC", "CNZ", "CP",
     "CPE", "CPO", "CZ", "JC", "JM", "JMP",
     "JNC", "JNZ", "JP", "JPE", "JPO", "JZ",
-    "DI", "EI", "SIM"
+    
 };
 
 const char * registers[] = { "A", "B", "C", "D", "E", "H", "L", "SP", "M" }; //for syntax highlighting

@@ -551,7 +551,9 @@ void checkInterrupts(Sim8085 * sim) {
         } else if (sim->rst5_5) {
             sim->rst5_5 = 0;
             if (sim->rst5_5_enable) BRANCH_TO_SERVICE_ROUTINE(sim, 0x2c);
-            
+        } else if (sim->intr) {
+            sim->intr = 0;
+            BRANCH_TO_SERVICE_ROUTINE(sim, sim->intr_opcode_latch);
         }
     }
 }
@@ -649,7 +651,8 @@ void RET_ZERO(Sim8085 * sim, int v) {
     if (getzero(sim) == v) {
         assert(sim->SP <= 0xFFFF - 2);
         int LB = sim->RAM[sim->SP++] & 0xFF;
-        int MB = sim->RAM[sim->SP++] & 0xFF; sim->PC = GETADDRESS(MB, LB);
+        int MB = sim->RAM[sim->SP++] & 0xFF;
+        sim->PC = GETADDRESS(MB, LB);
     }
 }
 
@@ -659,6 +662,13 @@ void IN(Sim8085 * sim) {
 void OUT(Sim8085 * sim) {
     sim->IOPORTS[sim->RAM[sim->PC++] & 0XFF] = sim->REGISTER[GETREGCHAR('A')];
 }
+void RIM(Sim8085 * sim) {
+    int val = (sim->interrupts_enabled << 3) |
+        (!sim->rst7_5_enable << 2) |
+        (!sim->rst6_5_enable << 1) |
+        (!sim->rst5_5_enable << 0);
+    sim->REGISTER[GETREGCHAR('A')] = val;
+}
 void SIM(Sim8085 * sim) {
     int accu = sim->REGISTER[GETREGCHAR('A')];    
     if ((accu >> 4) & 1) sim->rst7_5 = 0; //reset rst 7.5 latch
@@ -667,6 +677,10 @@ void SIM(Sim8085 * sim) {
         sim->rst6_5_enable = !((accu >> 1) & 1);
         sim->rst7_5_enable = !((accu >> 2) & 1);
     }
+}
+void RST(Sim8085 * sim, int opcode) {
+    int addr = opcode & (0x7 << 3); //directly calculate the rst jump address
+    BRANCH_TO_SERVICE_ROUTINE(sim, addr);
 }
 void EI(Sim8085 * sim) {
     sim->interrupts_enabled = 1;
@@ -764,6 +778,8 @@ void singlestep(Sim8085 * sim) {
     else if (is_ei(v)) EI(sim);
     else if (is_di(v)) DI(sim);
     else if (is_sim(v)) SIM(sim);
+    else if (is_rim(v)) RIM(sim);
+    else if (is_rst(v)) RST(sim, v);
 
     //interrupt check logic
     checkInterrupts(sim);
@@ -775,7 +791,8 @@ void loadprogram(Sim8085 * sim, int start_addr, ProgramFile * program_file) {
     sim->byte_list.count = 0;
     sim->interrupts_enabled = 0;
     sim->rst5_5_enable = sim->rst6_5_enable = sim->rst7_5_enable = 0;
-    sim->rst5_5 = sim->rst6_5 = sim->rst7_5 = sim->trap = 0;
+    sim->rst5_5 = sim->rst6_5 = sim->rst7_5 = sim->trap = sim->intr = 0;
+    sim->intr_opcode_latch = 0;
     sim->HALT = 0;
     sim->PC = sim->START_ADDRESS = start_addr;
     sim->SP = 0xFFFF;
