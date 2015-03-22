@@ -60,6 +60,7 @@ const char * identifiers[] = {
     "CALL", "CC", "CM", "CNC", "CNZ", "CP",
     "CPE", "CPO", "CZ", "JC", "JM", "JMP",
     "JNC", "JNZ", "JP", "JPE", "JPO", "JZ",
+    "DI", "EI", "SIM"
 };
 
 const char * registers[] = { "A", "B", "C", "D", "E", "H", "L", "SP" };

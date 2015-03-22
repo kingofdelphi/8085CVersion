@@ -78,4 +78,8 @@ int is_lxi(int v);
 int is_dad(int v);
 int is_rotleft(int v);
 int is_rotright(int v);
+//interrupts
+int is_ei(int v);
+int is_di(int v);
+int is_sim(int v);
 #endif

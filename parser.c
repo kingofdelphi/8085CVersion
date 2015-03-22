@@ -48,15 +48,16 @@ int is_valid_no(const char * s, int n) {
     return 1;
 }
 int toint(const char * s, int len, char temp_error[]) {
+
     if (!is_valid_no(s, len)) {
-        strcat(temp_error, "Non-digit on a number field");
+        if (temp_error) strcat(temp_error, "Non-digit on a number field");
         return 0;
     }
     int n = 0;
     int i = 0;
     while (i < len && s[i] == '0') i++;
     if (len - i >= 8) {
-        strcat(temp_error, "Overflow");
+        if (temp_error) strcat(temp_error, "Overflow");
         return 0;
     }
     for (; i < len; ++i) {
@@ -145,13 +146,20 @@ void resolve_line(const char * line, LabelList * labels, ErrorList * err_list, i
             err_list->count++;
             return ;
         }
-        if (findInLabelList(labels, line + tok_s, tok_e - tok_s) != -1) {
-            sprintf(err_list->err_list[err_list->count], "Multiple labels: ");
-            strncat(err_list->err_list[err_list->count], line + tok_s, tok_e - tok_s);
-            err_list->count++;
-            return ;
+        //if it's an address
+        if (inhex(line + tok_s, tok_e - tok_s)) {
+            *addr = hextodecimal(line + tok_s, tok_e - tok_s - 1);
+        } else if (is_valid_no(line + tok_s, tok_e - tok_s)) {
+            *addr = toint(line + tok_s, tok_e - tok_s, NULL);
+        } else {
+            if (findInLabelList(labels, line + tok_s, tok_e - tok_s) != -1) {
+                sprintf(err_list->err_list[err_list->count], "Multiple labels: ");
+                strncat(err_list->err_list[err_list->count], line + tok_s, tok_e - tok_s);
+                err_list->count++;
+                return ;
+            }
+            addLabelToLabelList(labels, line + tok_s, tok_e - tok_s, *addr);
         }
-        addLabelToLabelList(labels, line + tok_s, tok_e - tok_s, *addr);
         gettoken(line, &marker, &tok_s, &tok_e);
         if (tok_s == tok_e || NSTRCMP("$", line + tok_s, tok_e - tok_s) == 0) return; //only a label on a line
     }
@@ -165,14 +173,15 @@ void resolve_line(const char * line, LabelList * labels, ErrorList * err_list, i
                 err_list->count++;
                 return;
             }
-            if (findInLabelList(labels, line + tok_s, tok_e - tok_s) == -1) {
-
-                to_resolve[*to_res_n][0] = 0;
-                strncat(to_resolve[*to_res_n], line + tok_s, tok_e - tok_s);
-                ++*to_res_n;
+            if (!inhex(line + tok_s, tok_e - tok_s) && !is_valid_no(line + tok_s, tok_e - tok_s)) {
+                if (findInLabelList(labels, line + tok_s, tok_e - tok_s) == -1) {
+                    to_resolve[*to_res_n][0] = 0;
+                    strncat(to_resolve[*to_res_n], line + tok_s, tok_e - tok_s);
+                    ++*to_res_n;
+                }
             }
+            *addr += 3;
         }
-        *addr += 3;
     } else {
         sprintf(err_list->err_list[err_list->count], "Undefined instruction: ");
         strncat(err_list->err_list[err_list->count], line + tok_s, tok_e - tok_s);
@@ -184,7 +193,6 @@ void resolveLabels(ProgramFile * lines, LabelList * labels, ErrorList * err_list
     char to_resolve[100][255]; //labels that need to be resolved at the next pass
     int to_res_n = 0;
     int addr = start_addr;
-
     for (int i = 0; i < lines->count; ++i) {
         char lnmsg[255];
         sprintf(lnmsg, " at line %d: ", i);
@@ -216,7 +224,7 @@ int get_id(const char * s, int n) {
     return -1; // invalid operand s
 }
 //this function parses a single line of instruction
-void inst_parse(const char * line, LabelList * labels, int line_no, ByteList * byte_list, char temp_error[]) {
+void inst_parse(const char * line, LabelList * labels, int * current_addr, int line_no, ByteList * byte_list, char temp_error[]) {
     int marker = 0, tok_s, tok_e;
     gettoken(line, &marker, &tok_s, &tok_e);
     if (NSTRCMP("$", line + tok_s, tok_e - tok_s) == 0) return ; //empty list
@@ -227,10 +235,17 @@ void inst_parse(const char * line, LabelList * labels, int line_no, ByteList * b
             sprintf(temp_error, "Emtpy label name");
             return ;
         }
+        if (inhex(line + tok_s, tok_e - tok_s)) {
+            *current_addr = hextodecimal(line + tok_s, tok_e - tok_s - 1);
+        } else if (is_valid_no(line + tok_s, tok_e - tok_s)) {
+            *current_addr = toint(line + tok_s, tok_e - tok_s, NULL);
+        }
         gettoken(line, &marker, &tok_s, &tok_e);
         if (tok_s == tok_e || NSTRCMP("$", line + tok_s, tok_e - tok_s) == 0) return ;
     }
+    int instruction_type = -1; //one, two or three byte instruction
     if (IS_ONE_BYTE_INST(line + tok_s, tok_e - tok_s)) {
+        instruction_type = 1;
         if (NSTRCMP("ADC", line + tok_s, tok_e - tok_s) == 0) {
             gettoken(line, &marker, &tok_s, &tok_e);
             int r = get_id(line + tok_s, tok_e - tok_s);
@@ -240,7 +255,7 @@ void inst_parse(const char * line, LabelList * labels, int line_no, ByteList * b
                 return ;
             }
             int opcode = (17 << 3) + r;
-            addToList(byte_list, opcode, line_no);
+            addToList(byte_list, opcode, line_no, *current_addr);
         } else if (NSTRCMP("ADD", line + tok_s, tok_e - tok_s) == 0) {
             gettoken(line, &marker, &tok_s, &tok_e);
             int r = get_id(line + tok_s, tok_e - tok_s);
@@ -250,7 +265,7 @@ void inst_parse(const char * line, LabelList * labels, int line_no, ByteList * b
                 return ;
             }
             int opcode = (0x8 << 4) + r;
-            addToList(byte_list, opcode, line_no);
+            addToList(byte_list, opcode, line_no, *current_addr);
         } else if (NSTRCMP("ANA", line + tok_s, tok_e - tok_s) == 0) {
             gettoken(line, &marker, &tok_s, &tok_e);
             int r = get_id(line + tok_s, tok_e - tok_s);
@@ -260,11 +275,11 @@ void inst_parse(const char * line, LabelList * labels, int line_no, ByteList * b
                 return ;
             }
             int opcode = (0xA << 4) + r;
-            addToList(byte_list, opcode, line_no);
+            addToList(byte_list, opcode, line_no, *current_addr);
         } else if (NSTRCMP("CMA", line + tok_s, tok_e - tok_s) == 0) {
-            addToList(byte_list, 0X2F, line_no);
+            addToList(byte_list, 0X2F, line_no, *current_addr);
         } else if (NSTRCMP("CMC", line + tok_s, tok_e - tok_s) == 0) {
-            addToList(byte_list, 0x3f, line_no);
+            addToList(byte_list, 0x3f, line_no, *current_addr);
         } else if (NSTRCMP("CMP", line + tok_s, tok_e - tok_s) == 0) {
             gettoken(line, &marker, &tok_s, &tok_e);
             int r = get_id(line + tok_s, tok_e - tok_s);
@@ -274,9 +289,9 @@ void inst_parse(const char * line, LabelList * labels, int line_no, ByteList * b
                 return ;
             }
             int opcode = (23 << 3) + r;
-            addToList(byte_list, opcode, line_no);
+            addToList(byte_list, opcode, line_no, *current_addr);
         } else if (NSTRCMP("DAA", line + tok_s, tok_e - tok_s) == 0) {
-            addToList(byte_list, 0x27, line_no);
+            addToList(byte_list, 0x27, line_no, *current_addr);
         } else if (NSTRCMP("DAD", line + tok_s, tok_e - tok_s) == 0) {
             gettoken(line, &marker, &tok_s, &tok_e);
             int opcode;
@@ -290,7 +305,7 @@ void inst_parse(const char * line, LabelList * labels, int line_no, ByteList * b
                 return ;
             }
             opcode = (opcode << 4) + 0x9;
-            addToList(byte_list, opcode, line_no);
+            addToList(byte_list, opcode, line_no, *current_addr);
         } else if (NSTRCMP("DCR", line + tok_s, tok_e - tok_s) == 0) {
             gettoken(line, &marker, &tok_s, &tok_e);
             int r = get_id(line + tok_s, tok_e - tok_s);
@@ -300,7 +315,7 @@ void inst_parse(const char * line, LabelList * labels, int line_no, ByteList * b
                 return ;
             }
             int opcode = 0x05 + (r << 3);
-            addToList(byte_list, opcode, line_no);
+            addToList(byte_list, opcode, line_no, *current_addr);
         } else if (NSTRCMP("DCX", line + tok_s, tok_e - tok_s) == 0) {
             gettoken(line, &marker, &tok_s, &tok_e);
             int opcode;
@@ -314,9 +329,9 @@ void inst_parse(const char * line, LabelList * labels, int line_no, ByteList * b
                 return ;
             }
             opcode = (opcode << 4) + 0xB;
-            addToList(byte_list, opcode, line_no);
+            addToList(byte_list, opcode, line_no, *current_addr);
         } else if (NSTRCMP("HLT", line + tok_s, tok_e - tok_s) == 0) {
-            addToList(byte_list, 0x76, line_no);
+            addToList(byte_list, 0x76, line_no, *current_addr);
         } else if (NSTRCMP("INR", line + tok_s, tok_e - tok_s) == 0) {
             gettoken(line, &marker, &tok_s, &tok_e);
             int r = get_id(line + tok_s, tok_e - tok_s);
@@ -326,7 +341,7 @@ void inst_parse(const char * line, LabelList * labels, int line_no, ByteList * b
                 return ;
             }
             int opcode = (r << 3) + 0x04;
-            addToList(byte_list, opcode, line_no);
+            addToList(byte_list, opcode, line_no, *current_addr);
         } else if (NSTRCMP("INX", line + tok_s, tok_e - tok_s) == 0) {
             gettoken(line, &marker, &tok_s, &tok_e);
             int opcode;
@@ -340,7 +355,7 @@ void inst_parse(const char * line, LabelList * labels, int line_no, ByteList * b
                 return ;
             }
             opcode = (opcode << 4) + 0x3;
-            addToList(byte_list, opcode, line_no);
+            addToList(byte_list, opcode, line_no, *current_addr);
         } else if (NSTRCMP("LDAX", line + tok_s, tok_e - tok_s) == 0) {
             gettoken(line, &marker, &tok_s, &tok_e);
             int opcode;
@@ -352,7 +367,7 @@ void inst_parse(const char * line, LabelList * labels, int line_no, ByteList * b
                 return ;
             }
             opcode = (opcode << 4) + 0xA;
-            addToList(byte_list, opcode, line_no);
+            addToList(byte_list, opcode, line_no, *current_addr);
         } else if (NSTRCMP("MOV", line + tok_s, tok_e - tok_s) == 0) {
             gettoken(line, &marker, &tok_s, &tok_e);
             int r = get_id(line + tok_s, tok_e - tok_s);
@@ -379,16 +394,16 @@ void inst_parse(const char * line, LabelList * labels, int line_no, ByteList * b
                 return ;
             }
             int opcode = (0x1 << 6) + (r << 3) + tr;
-            addToList(byte_list, opcode, line_no);
+            addToList(byte_list, opcode, line_no, *current_addr);
         } else if (NSTRCMP("NOP", line + tok_s, tok_e - tok_s) == 0) {
-            addToList(byte_list, 0x00, line_no);
+            addToList(byte_list, 0x00, line_no, *current_addr);
         } else if (NSTRCMP("ORA", line + tok_s, tok_e - tok_s) == 0) {
             gettoken(line, &marker, &tok_s, &tok_e);
             int r = get_id(line + tok_s, tok_e - tok_s);
             int opcode = (0xB << 4) + r;
-            addToList(byte_list, opcode, line_no);
+            addToList(byte_list, opcode, line_no, *current_addr);
         } else if (NSTRCMP("PCHL", line + tok_s, tok_e - tok_s) == 0) {
-            addToList(byte_list, 0xe9, line_no);
+            addToList(byte_list, 0xe9, line_no, *current_addr);
         } else if (NSTRCMP("POP", line + tok_s, tok_e - tok_s) == 0) {
             gettoken(line, &marker, &tok_s, &tok_e);
             int opcode;
@@ -402,7 +417,7 @@ void inst_parse(const char * line, LabelList * labels, int line_no, ByteList * b
                 return ;
             }
             opcode = (0x3 << 6) + (opcode << 4) + 0x1;
-            addToList(byte_list, opcode, line_no);
+            addToList(byte_list, opcode, line_no, *current_addr);
         } else if (NSTRCMP("PUSH", line + tok_s, tok_e - tok_s) == 0) {
             gettoken(line, &marker, &tok_s, &tok_e);
             int opcode;
@@ -416,33 +431,33 @@ void inst_parse(const char * line, LabelList * labels, int line_no, ByteList * b
                 return ;
             }
             opcode = (0x3 << 6) + (opcode << 4) + 0x5;
-            addToList(byte_list, opcode, line_no);
+            addToList(byte_list, opcode, line_no, *current_addr);
         } else if (NSTRCMP("RAL", line + tok_s, tok_e - tok_s) == 0) {
-            addToList(byte_list, 0x17, line_no);
+            addToList(byte_list, 0x17, line_no, *current_addr);
         } else if (NSTRCMP("RAR", line + tok_s, tok_e - tok_s) == 0) {
-            addToList(byte_list, 0x1f, line_no);
+            addToList(byte_list, 0x1f, line_no, *current_addr);
         } else if (NSTRCMP("RC", line + tok_s, tok_e - tok_s) == 0) {
-            addToList(byte_list, 0xd8, line_no);
+            addToList(byte_list, 0xd8, line_no, *current_addr);
         } else if (NSTRCMP("RET", line + tok_s, tok_e - tok_s) == 0) {
-            addToList(byte_list, 0xc9, line_no);
+            addToList(byte_list, 0xc9, line_no, *current_addr);
         } else if (NSTRCMP("RLC", line + tok_s, tok_e - tok_s) == 0) {
-            addToList(byte_list, 0x7, line_no);
+            addToList(byte_list, 0x7, line_no, *current_addr);
         } else if (NSTRCMP("RM", line + tok_s, tok_e - tok_s) == 0) {
-            addToList(byte_list, 0xf8, line_no);
+            addToList(byte_list, 0xf8, line_no, *current_addr);
         } else if (NSTRCMP("RNC", line + tok_s, tok_e - tok_s) == 0) {
-            addToList(byte_list, 0xd0, line_no);
+            addToList(byte_list, 0xd0, line_no, *current_addr);
         } else if (NSTRCMP("RNZ", line + tok_s, tok_e - tok_s) == 0) {
-            addToList(byte_list, 0xc0, line_no);
+            addToList(byte_list, 0xc0, line_no, *current_addr);
         } else if (NSTRCMP("RP", line + tok_s, tok_e - tok_s) == 0) {
-            addToList(byte_list, 0xf0, line_no);
+            addToList(byte_list, 0xf0, line_no, *current_addr);
         } else if (NSTRCMP("RPE", line + tok_s, tok_e - tok_s) == 0) {
-            addToList(byte_list, 0xe8, line_no);
+            addToList(byte_list, 0xe8, line_no, *current_addr);
         } else if (NSTRCMP("RPO", line + tok_s, tok_e - tok_s) == 0) {
-            addToList(byte_list, 0xe0, line_no);
+            addToList(byte_list, 0xe0, line_no, *current_addr);
         } else if (NSTRCMP("RRC", line + tok_s, tok_e - tok_s) == 0) {
-            addToList(byte_list, 0x0f, line_no);
+            addToList(byte_list, 0x0f, line_no, *current_addr);
         } else if (NSTRCMP("RZ", line + tok_s, tok_e - tok_s) == 0) {
-            addToList(byte_list, 0xc8, line_no);
+            addToList(byte_list, 0xc8, line_no, *current_addr);
         } else if (NSTRCMP("SBB", line + tok_s, tok_e - tok_s) == 0) {
             gettoken(line, &marker, &tok_s, &tok_e);
             int r = get_id(line + tok_s, tok_e - tok_s);
@@ -452,9 +467,9 @@ void inst_parse(const char * line, LabelList * labels, int line_no, ByteList * b
                 return ;
             }
             int opcode = (19 << 3) + r;
-            addToList(byte_list, opcode, line_no);
+            addToList(byte_list, opcode, line_no, *current_addr);
         } else if (NSTRCMP("SPHL", line + tok_s, tok_e - tok_s) == 0) {
-            addToList(byte_list, 0xf9, line_no);
+            addToList(byte_list, 0xf9, line_no, *current_addr);
         } else if (NSTRCMP("STAX", line + tok_s, tok_e - tok_s) == 0) {
             gettoken(line, &marker, &tok_s, &tok_e);
             int opcode = 0;
@@ -466,9 +481,9 @@ void inst_parse(const char * line, LabelList * labels, int line_no, ByteList * b
                 return ;
             }
             opcode = (opcode << 4) + 0x2;
-            addToList(byte_list, opcode, line_no);
+            addToList(byte_list, opcode, line_no, *current_addr);
         } else if (NSTRCMP("STC", line + tok_s, tok_e - tok_s) == 0) {
-            addToList(byte_list, 0x37, line_no);
+            addToList(byte_list, 0x37, line_no, *current_addr);
         } else if (NSTRCMP("SUB", line + tok_s, tok_e - tok_s) == 0) {
             gettoken(line, &marker, &tok_s, &tok_e);
             int r = get_id(line + tok_s, tok_e - tok_s);
@@ -478,9 +493,9 @@ void inst_parse(const char * line, LabelList * labels, int line_no, ByteList * b
                 return ;
             }
             int opcode = (0x9 << 4) + r;
-            addToList(byte_list, opcode, line_no);
+            addToList(byte_list, opcode, line_no, *current_addr);
         } else if (NSTRCMP("XCHG", line + tok_s, tok_e - tok_s) == 0) {
-            addToList(byte_list, 0xeb, line_no);
+            addToList(byte_list, 0xeb, line_no, *current_addr);
         } else if (NSTRCMP("XRA", line + tok_s, tok_e - tok_s) == 0) {
             gettoken(line, &marker, &tok_s, &tok_e);
             int r = get_id(line + tok_s, tok_e - tok_s);
@@ -490,26 +505,29 @@ void inst_parse(const char * line, LabelList * labels, int line_no, ByteList * b
                 return ;
             }
             int opcode = (21 << 3) + r;
-            addToList(byte_list, opcode, line_no);
+            addToList(byte_list, opcode, line_no, *current_addr);
         } else if (NSTRCMP("XTHL", line + tok_s, tok_e - tok_s) == 0) {
-            addToList(byte_list, 0xe3, line_no);
+            addToList(byte_list, 0xe3, line_no, *current_addr);
         } else if (NSTRCMP("EI", line + tok_s, tok_e - tok_s) == 0) {
-            addToList(byte_list, 0xfb, line_no);
+            addToList(byte_list, 0xfb, line_no, *current_addr);
         } else if (NSTRCMP("DI", line + tok_s, tok_e - tok_s) == 0) {
-            addToList(byte_list, 0xf3, line_no);
+            addToList(byte_list, 0xf3, line_no, *current_addr);
+        } else if (NSTRCMP("SIM", line + tok_s, tok_e - tok_s) == 0) {
+            addToList(byte_list, 0x30, line_no, *current_addr);
         }
 
     } else if (IS_TWO_BYTE_INST(line + tok_s, tok_e - tok_s)) {
+        instruction_type = 2;
         if (NSTRCMP("ACI", line + tok_s, tok_e - tok_s) == 0)
-            addToList(byte_list, 0XCE, line_no);
+            addToList(byte_list, 0XCE, line_no, *current_addr);
         else if (NSTRCMP("ADI", line + tok_s, tok_e - tok_s) == 0)
-            addToList(byte_list, 0XC6, line_no);
+            addToList(byte_list, 0XC6, line_no, *current_addr);
         else if (NSTRCMP("ANI", line + tok_s, tok_e - tok_s) == 0)
-            addToList(byte_list, 0XE6, line_no);
+            addToList(byte_list, 0XE6, line_no, *current_addr);
         else if (NSTRCMP("CPI", line + tok_s, tok_e - tok_s) == 0)
-            addToList(byte_list, 0Xfe, line_no);
+            addToList(byte_list, 0Xfe, line_no, *current_addr);
         else if (NSTRCMP("IN", line + tok_s, tok_e - tok_s) == 0)
-            addToList(byte_list, 0Xdb, line_no);
+            addToList(byte_list, 0Xdb, line_no, *current_addr);
         else if (NSTRCMP("MVI", line + tok_s, tok_e - tok_s) == 0) {
             gettoken(line, &marker, &tok_s, &tok_e);
             int r = get_id(line + tok_s, tok_e - tok_s);
@@ -524,17 +542,17 @@ void inst_parse(const char * line, LabelList * labels, int line_no, ByteList * b
                 return ;
             }
             int opcode = (r << 3) + 0x06;
-            addToList(byte_list, opcode, line_no);
+            addToList(byte_list, opcode, line_no, *current_addr);
         } else if (NSTRCMP("ORI", line + tok_s, tok_e - tok_s) == 0)
-            addToList(byte_list, 0xf6, line_no);
+            addToList(byte_list, 0xf6, line_no, *current_addr);
         else if (NSTRCMP("OUT", line + tok_s, tok_e - tok_s) == 0)
-            addToList(byte_list, 0xd3, line_no);
+            addToList(byte_list, 0xd3, line_no, *current_addr);
         else if (NSTRCMP("SBI", line + tok_s, tok_e - tok_s) == 0)
-            addToList(byte_list, 0xde, line_no);
+            addToList(byte_list, 0xde, line_no, *current_addr);
         else if (NSTRCMP("SUI", line + tok_s, tok_e - tok_s) == 0)
-            addToList(byte_list, 0xd6, line_no);
+            addToList(byte_list, 0xd6, line_no, *current_addr);
         else if (NSTRCMP("XRI", line + tok_s, tok_e - tok_s) == 0)
-            addToList(byte_list, 0xee, line_no);
+            addToList(byte_list, 0xee, line_no, *current_addr);
         gettoken(line, &marker, &tok_s, &tok_e);
         if (tok_s == tok_e) {
             strcat(temp_error, "Second operand missing");
@@ -551,60 +569,67 @@ void inst_parse(const char * line, LabelList * labels, int line_no, ByteList * b
             strcat(temp_error, "Overflow");
             return ;
         }
-        addToList(byte_list, v, line_no);
+        addToList(byte_list, v, line_no, 1 + *current_addr);
     } else if (IS_THREE_BYTE_INST(line + tok_s, tok_e - tok_s)) {
+        instruction_type = 3;
         if (IS_BRANCH_INST(line + tok_s, tok_e - tok_s)) {
             if (NSTRCMP("CALL", line + tok_s, tok_e - tok_s) == 0)
-                addToList(byte_list, 0xcd, line_no);
+                addToList(byte_list, 0xcd, line_no, *current_addr);
             else if (NSTRCMP("CC", line + tok_s, tok_e - tok_s) == 0)
-                addToList(byte_list, 0xdc, line_no);
+                addToList(byte_list, 0xdc, line_no, *current_addr);
             else if (NSTRCMP("CM", line + tok_s, tok_e - tok_s) == 0)
-                addToList(byte_list, 0xfc, line_no);
+                addToList(byte_list, 0xfc, line_no, *current_addr);
             else if (NSTRCMP("CNC", line + tok_s, tok_e - tok_s) == 0)
-                addToList(byte_list, 0xd4, line_no);
+                addToList(byte_list, 0xd4, line_no, *current_addr);
             else if (NSTRCMP("CNZ", line + tok_s, tok_e - tok_s) == 0)
-                addToList(byte_list, 0xc4, line_no);
+                addToList(byte_list, 0xc4, line_no, *current_addr);
             else if (NSTRCMP("CP", line + tok_s, tok_e - tok_s) == 0)
-                addToList(byte_list, 0xf4, line_no);
+                addToList(byte_list, 0xf4, line_no, *current_addr);
             else if (NSTRCMP("CPE", line + tok_s, tok_e - tok_s) == 0)
-                addToList(byte_list, 0xec, line_no);
+                addToList(byte_list, 0xec, line_no, *current_addr);
             else if (NSTRCMP("CPO", line + tok_s, tok_e - tok_s) == 0)
-                addToList(byte_list, 0xe4, line_no);
+                addToList(byte_list, 0xe4, line_no, *current_addr);
             else if (NSTRCMP("CZ", line + tok_s, tok_e - tok_s) == 0)
-                addToList(byte_list, 0xcc, line_no);
+                addToList(byte_list, 0xcc, line_no, *current_addr);
             else if (NSTRCMP("JC", line + tok_s, tok_e - tok_s) == 0)
-                addToList(byte_list, 0xda, line_no);
+                addToList(byte_list, 0xda, line_no, *current_addr);
             else if (NSTRCMP("JM", line + tok_s, tok_e - tok_s) == 0)
-                addToList(byte_list, 0xfa, line_no);
-            else if (NSTRCMP("JMP", line + tok_s, tok_e - tok_s) == 0)
-                addToList(byte_list, 0xc3, line_no);
-            else if (NSTRCMP("JNC", line + tok_s, tok_e - tok_s) == 0)
-                addToList(byte_list, 0xd2, line_no);
+                addToList(byte_list, 0xfa, line_no, *current_addr);
+            else if (NSTRCMP("JMP", line + tok_s, tok_e - tok_s) == 0) {
+                addToList(byte_list, 0xc3, line_no, *current_addr);
+            } else if (NSTRCMP("JNC", line + tok_s, tok_e - tok_s) == 0)
+                addToList(byte_list, 0xd2, line_no, *current_addr);
             else if (NSTRCMP("JNZ", line + tok_s, tok_e - tok_s) == 0)
-                addToList(byte_list, 0xc2, line_no);
+                addToList(byte_list, 0xc2, line_no, *current_addr);
             else if (NSTRCMP("JP", line + tok_s, tok_e - tok_s) == 0)
-                addToList(byte_list, 0xf2, line_no);
+                addToList(byte_list, 0xf2, line_no, *current_addr);
             else if (NSTRCMP("JPE", line + tok_s, tok_e - tok_s) == 0)
-                addToList(byte_list, 0xea, line_no);
+                addToList(byte_list, 0xea, line_no, *current_addr);
             else if (NSTRCMP("JPO", line + tok_s, tok_e - tok_s) == 0)
-                addToList(byte_list, 0xe2, line_no);
+                addToList(byte_list, 0xe2, line_no, *current_addr);
             else if (NSTRCMP("JZ", line + tok_s, tok_e - tok_s) == 0)
-                addToList(byte_list, 0xca, line_no);
+                addToList(byte_list, 0xca, line_no, *current_addr);
             gettoken(line, &marker, &tok_s, &tok_e);
             int v;
-            if ((v = findInLabelList(labels, line + tok_s, tok_e - tok_s)) == -1) {
-                sprintf(temp_error, "Undefined label ");
-                strncat(temp_error, line + tok_s, tok_e - tok_s);
-                return ;
+            if (inhex(line + tok_s, tok_e - tok_s)) {
+                v = hextodecimal(line + tok_s, tok_e - tok_s - 1);
+            } else if (is_valid_no(line + tok_s, tok_e - tok_s)) {
+                v = toint(line + tok_s, tok_e - tok_s, NULL);
+            } else {
+                if ((v = findInLabelList(labels, line + tok_s, tok_e - tok_s)) == -1) {
+                    sprintf(temp_error, "Undefined label ");
+                    strncat(temp_error, line + tok_s, tok_e - tok_s);
+                    return ;
+                }
+                v = labels->label[v].address;
             }
-            v = labels->label[v].address;
-            addToList(byte_list, v & 0xFF, line_no);
-            addToList(byte_list, (v >> 8) & 0Xff, line_no);
+            addToList(byte_list, v & 0xFF, line_no, 1 + *current_addr);
+            addToList(byte_list, (v >> 8) & 0Xff, line_no, 2 + *current_addr);
         } else {
             if (NSTRCMP("LDA", line + tok_s, tok_e - tok_s) == 0)
-                addToList(byte_list, 0x3a, line_no);
+                addToList(byte_list, 0x3a, line_no, *current_addr);
             else if (NSTRCMP("LHLD", line + tok_s, tok_e - tok_s) == 0)
-                addToList(byte_list, 0x2a, line_no);
+                addToList(byte_list, 0x2a, line_no, *current_addr);
             else if (NSTRCMP("LXI", line + tok_s, tok_e - tok_s) == 0) {
                 gettoken(line, &marker, &tok_s, &tok_e);
                 int opcode;
@@ -623,11 +648,11 @@ void inst_parse(const char * line, LabelList * labels, int line_no, ByteList * b
                     return ;
                 }
                 opcode = (opcode << 4) + 0x1;
-                addToList(byte_list, opcode, line_no);
+                addToList(byte_list, opcode, line_no, *current_addr);
             } else if (NSTRCMP("SHLD", line + tok_s, tok_e - tok_s) == 0)
-                addToList(byte_list, 0x22, line_no);
+                addToList(byte_list, 0x22, line_no, *current_addr);
             else if (NSTRCMP("STA", line + tok_s, tok_e - tok_s) == 0)
-                addToList(byte_list, 0x32, line_no);
+                addToList(byte_list, 0x32, line_no, *current_addr);
             gettoken(line, &marker, &tok_s, &tok_e);
             if (tok_s == tok_e) {
                 strcat(temp_error, "Operand missing");
@@ -644,22 +669,24 @@ void inst_parse(const char * line, LabelList * labels, int line_no, ByteList * b
                 strcat(temp_error, "Overflow");
                 return ;
             }
-            addToList(byte_list, v & 0xFF, line_no);
-            addToList(byte_list, (v >> 8) & 0xff, line_no);
+            addToList(byte_list, v & 0xFF, line_no, 1 + *current_addr);
+            addToList(byte_list, (v >> 8) & 0xff, line_no, 2 + *current_addr);
         }
     }
+    if (instruction_type != -1) *current_addr += instruction_type; //update program address
     gettoken(line, &marker, &tok_s, &tok_e);
     if (tok_s != tok_e && NSTRCMP("$", line + tok_s, tok_e - tok_s) != 0) {
         strcat(temp_error, "Extra insertions");
         return ;
     }
 }
-void parse(ProgramFile * lines, LabelList * labels, ErrorList * err_list, ByteList * byte_list) {
+void parse(ProgramFile * lines, LabelList * labels, ErrorList * err_list, ByteList * byte_list, int start_addr) {
     char temp_error[255];
+    int current_addr = start_addr;
     for (int i = 0; i < lines->count; ++i) {
         if (strlen(lines->lines[i]) == 0) continue;
         temp_error[0] = 0;
-        inst_parse(lines->lines[i], labels, i, byte_list, temp_error);
+        inst_parse(lines->lines[i], labels, &current_addr, i, byte_list, temp_error);
         if (temp_error[0]) {
             sprintf(err_list->err_list[err_list->count], "Error at line %d: %s", i, temp_error);
             err_list->count++;
@@ -675,5 +702,5 @@ void program_parse
 //    }
     resolveLabels(program, labels, err_list, start_addr);
     byte_list->count = 0;
-    parse(program, labels, err_list, byte_list);
+    parse(program, labels, err_list, byte_list, start_addr);
 }

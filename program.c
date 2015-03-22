@@ -1,8 +1,9 @@
 #include "program.h"
 
-void addToList(ByteList * bytelist, int opcode, int line) {
+void addToList(ByteList * bytelist, int opcode, int line, int address) {
     bytelist->bytes[bytelist->count][0] = opcode;
     bytelist->bytes[bytelist->count][1] = line;
+    bytelist->bytes[bytelist->count][2] = address;
     bytelist->count++;
 }
 

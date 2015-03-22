@@ -470,6 +470,7 @@ void CPI(Sim8085 * sim) {
 void BRANCH(Sim8085 * sim, int call) {
     int LB = sim->RAM[sim->PC++] & 0xFF;
     int MB = sim->RAM[sim->PC++] & 0xFF;
+
     if (call) {
         assert(sim->SP > 1);
         sim->RAM[--sim->SP] = (sim->PC >> 8) & 0xFF;
@@ -623,8 +624,7 @@ void RET_ZERO(Sim8085 * sim, int v) {
     if (getzero(sim) == v) {
         assert(sim->SP <= 0xFFFF - 2);
         int LB = sim->RAM[sim->SP++] & 0xFF;
-        int MB = sim->RAM[sim->SP++] & 0xFF;
-        sim->PC = GETADDRESS(MB, LB);
+        int MB = sim->RAM[sim->SP++] & 0xFF; sim->PC = GETADDRESS(MB, LB);
     }
 }
 
@@ -633,6 +633,17 @@ void IN(Sim8085 * sim) {
 }
 void OUT(Sim8085 * sim) {
     sim->IOPORTS[sim->RAM[sim->PC++] & 0XFF] = sim->REGISTER[GETREGCHAR('A')];
+}
+void SIM(Sim8085 * sim) {
+    
+}
+void EI(Sim8085 * sim) {
+    sim->interrupts_enabled = 1;
+   
+}
+void DI(Sim8085 * sim) {
+    sim->interrupts_enabled = 0;
+    
 }
 void singlestep(Sim8085 * sim) {
     int v = sim->RAM[sim->PC++] & 0xFF;
@@ -718,19 +729,27 @@ void singlestep(Sim8085 * sim) {
     else if (is_pchl(v)) PCHL(sim);
     else if (is_in(v)) IN(sim);
     else if (is_out(v)) OUT(sim);
+    //interrupts
+    else if (is_ei(v)) EI(sim);
+    else if (is_di(v)) DI(sim);
+    else if (is_sim(v)) SIM(sim);
 }
 void loadprogram(Sim8085 * sim, int start_addr, ProgramFile * program_file) {
     sim->lines.count = 0;
     sim->err_list.count = 0;
     sim->labels.count = 0;
     sim->byte_list.count = 0;
+    sim->interrupts_enabled = 0;
     sim->HALT = 0;
     sim->PC = sim->START_ADDRESS = start_addr;
     sim->SP = 0xFFFF;
+    for (int i = 0; i < (1 << 16); ++i) sim->line_no[i] = -1; //initially each address in RAM is not associated to any line of the program_file
     program_parse(program_file, &sim->byte_list, &sim->labels, &sim->err_list, sim->START_ADDRESS);
     if (sim->err_list.count == 0) {
         for (int i = 0, ADDR = sim->PC; i < sim->byte_list.count; ++i) {
-            sim->RAM[ADDR++] = sim->byte_list.bytes[i][0];
+            int paddr = sim->byte_list.bytes[i][2];
+            sim->RAM[paddr] = sim->byte_list.bytes[i][0];//load opcode value
+            sim->line_no[paddr] = sim->byte_list.bytes[i][1]; //load line number of the program from which this code was extracted
         }
     }
 }
@@ -743,16 +762,17 @@ void stat(Sim8085 * sim) {
     printf("S: %d Z: %d AC: %d P: %d C: %d\n", getsign(sim), getzero(sim), getAF(sim), getparity(sim), getcarry(sim));
 }
 
-
-///rest
-
+//rest
 
 int hasHalted(Sim8085 * sim) {
     return sim->HALT;
 }
 int getIL(Sim8085 * sim) {
-    assert(sim->PC - sim->START_ADDRESS < sim->byte_list.count);
-    return sim->byte_list.bytes[sim->PC - sim->START_ADDRESS][1];
+    assert(sim->PC <= 0xFFFF);
+    if (sim->line_no[sim->PC] < 0) {
+        printf("Fallthrough : Executing instruction was not written by user\n");
+    }
+    return sim->line_no[sim->PC];
 }
 int readIO(Sim8085 * sim, int addr) {
     assert(addr >= 0 && addr <= 0xFF);

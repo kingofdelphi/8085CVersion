@@ -1,4 +1,15 @@
 #include "opcodecheck.h"
+//interrupts
+int is_ei(int v) {
+    return v == 0xfb;
+}
+int is_di(int v) {
+    return v == 0xf3;
+}
+int is_sim(int v) {
+    return v == 0x30;
+}
+//
 
 int is_jnz(int v) {
     return v == 0xc2;

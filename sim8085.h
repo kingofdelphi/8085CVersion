@@ -5,12 +5,14 @@
 typedef struct {
     ///FLAGS REGISTER IS IN REGISTER[7]
     int RAM[1 << 16], REGISTER[8], SP, PC, START_ADDRESS, IOPORTS[1 << 8];
+    int line_no[1 << 16];
     ProgramFile lines;
     ErrorList err_list;
     LabelList labels;
     ByteList byte_list;
-    int HALT;
-
+    int HALT, interrupts_enabled;
+    int rst7_5, rst6_5, rst_5_5;//boolean values provides information whether
+                                //each interrupt pins are available
 } Sim8085; ///struct end
 
 int GETHLADDRESS(Sim8085 * ) ;
