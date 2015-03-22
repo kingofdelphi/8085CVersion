@@ -7,6 +7,11 @@ extern pthread_cond_t io_signal;
 extern pthread_cond_t io_ack;
 extern pthread_mutex_t io_signal_mutex;
 extern pthread_mutex_t io_ack_mutex;
+#define PIN_TRAP 0
+#define PIN_RST_7_5 1
+#define PIN_RST_6_5 2
+#define PIN_RST_5_5 3
+#define PIN_INTR 4
 typedef struct {
     ///FLAGS REGISTER IS IN REGISTER[7]
     int RAM[1 << 16], REGISTER[8], SP, PC, START_ADDRESS;

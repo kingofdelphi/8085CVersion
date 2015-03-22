@@ -347,6 +347,7 @@ void executestep(void * arg) {
     pthread_mutex_lock(&broadcast_mutex);
     pthread_cond_broadcast(&cpu_started);
     pthread_mutex_unlock(&broadcast_mutex);
+    delay_loop(); //give time for ppi to enter its loop
     while (program_execution && !hasHalted(&simulator)) {
         pthread_mutex_lock(&sim_mutex); //lock before touching the simulator, there is another thread querying mpu status
         singlestep(&simulator);
@@ -428,6 +429,19 @@ void rst6_5_strobe() {
 }
 void rst7_5_strobe() {
     simulator.rst7_5 = 1;   
+}
+ppi_8255 ppi;
+void pin_a_strobe() { //send data too.
+    ppi.stb_a_signal = 1;
+    pthread_mutex_lock(&external_strobe_signal_mutex);
+    pthread_cond_broadcast(&external_strobe_signal);
+    pthread_mutex_unlock(&external_strobe_signal_mutex);
+}
+void pin_b_strobe() { //send data too.
+    ppi.stb_b_signal = 1;
+    pthread_mutex_lock(&external_strobe_signal_mutex);
+    pthread_cond_broadcast(&external_strobe_signal);
+    pthread_mutex_unlock(&external_strobe_signal_mutex);
 }
 int main (int   argc, char *argv[]) {
     gtk_init (&argc, &argv);
@@ -608,6 +622,12 @@ int main (int   argc, char *argv[]) {
     btn = gtk_button_new_with_label("Strobe 7.5 Pin");
     gtk_box_pack_start(GTK_BOX(infobox), btn, 0, 0, 1);
     g_signal_connect(btn, "clicked", G_CALLBACK(rst7_5_strobe), (void*)3);
+    btn = gtk_button_new_with_label("Strobe 8255 Pin A");
+    gtk_box_pack_start(GTK_BOX(infobox), btn, 0, 0, 1);
+    g_signal_connect(btn, "clicked", G_CALLBACK(pin_a_strobe), 0);
+    btn = gtk_button_new_with_label("Strobe 8255 Pin B");
+    gtk_box_pack_start(GTK_BOX(infobox), btn, 0, 0, 1);
+    g_signal_connect(btn, "clicked", G_CALLBACK(pin_b_strobe), 0);
 
     gtk_widget_set_hexpand(view, 1);
     gtk_widget_set_vexpand(view, 1);
@@ -618,8 +638,7 @@ int main (int   argc, char *argv[]) {
     pthread_mutex_init(&io_ack_mutex, 0);
     g_timeout_add(10, idleupdate, 0);
     //connect ppi to simulator
-    ppi_8255 ppi;
-    connect_ppi(&ppi, &simulator, 1);
+    connect_ppi(&ppi, &simulator, 1, PIN_TRAP, PIN_RST_5_5);
     gtk_main ();
 
     return 0;
