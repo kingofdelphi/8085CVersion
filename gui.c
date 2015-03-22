@@ -329,10 +329,10 @@ void singlesteplogic() {
     if (pl) {//if simulator was not previously running then do not run single step
         //in order to highlight the start line(line 0)
         if (!hasHalted(&simulator)) { 
-            singlestep(&simulator);
             pthread_mutex_lock(&broadcast_mutex);
             pthread_cond_broadcast(&cpu_started);
             pthread_mutex_unlock(&broadcast_mutex);
+            singlestep(&simulator);
         } else {
             program_loaded = 0;
         }
@@ -344,13 +344,13 @@ void singlesteplogic() {
 //which will be running on a separate thread
 void executestep(void * arg) {
     program_execution = 1; //signal that thread loop is running
+    pthread_mutex_lock(&broadcast_mutex);
+    pthread_cond_broadcast(&cpu_started);
+    pthread_mutex_unlock(&broadcast_mutex);
     while (program_execution && !hasHalted(&simulator)) {
         pthread_mutex_lock(&sim_mutex); //lock before touching the simulator, there is another thread querying mpu status
         singlestep(&simulator);
         pthread_mutex_unlock(&sim_mutex);
-        pthread_mutex_lock(&broadcast_mutex);
-        pthread_cond_broadcast(&cpu_started);
-        pthread_mutex_unlock(&broadcast_mutex);
     }
     program_execution = 0;
     pthread_exit((void*)0);
@@ -398,7 +398,7 @@ void readfrommem() {
 void readfromio() {
     const char * txt = gtk_entry_get_text(readfromedit);
     int no = strtoint(txt);
-    no = simulator.IOPORTS[no];
+    no = read_signal(&simulator, no);
     char tmp[255];
     inttostr(no, tmp);
     gtk_entry_set_text(readfromedit, tmp);
@@ -415,7 +415,7 @@ void writetoio() {
     int address = strtoint(txt);
     txt = gtk_entry_get_text(addressval);
     int value = strtoint(txt);
-    simulator.IOPORTS[address] = value;
+    write_signal(&simulator, address, value);
 }
 void trap_strobe() {
     simulator.trap = 1;   
@@ -614,10 +614,12 @@ int main (int   argc, char *argv[]) {
     gtk_widget_show_all (window);
     pthread_mutex_init(&sim_mutex, 0);
     pthread_mutex_init(&broadcast_mutex, 0);
+    pthread_mutex_init(&io_signal_mutex, 0);
+    pthread_mutex_init(&io_ack_mutex, 0);
     g_timeout_add(10, idleupdate, 0);
     //connect ppi to simulator
     ppi_8255 ppi;
-    connect_ppi(&ppi, &simulator, 10);
+    connect_ppi(&ppi, &simulator, 1);
     gtk_main ();
 
     return 0;

@@ -6,9 +6,10 @@
 #define MAX_PPI_CONNECTIONS (256 >> 4) //since each ppi uses 4 address values
 typedef struct {
     Sim8085 * mpu; //simulator to which the ppi is connected to
-    int base_address;
-    int control_register_latch; //used to copy the control register value
+    int chip_select;
+    int control_register; //used to copy the control register value
     int thread_id;
+    int porta, portb, portc, portd;
 } ppi_8255;
 
 //ppi will be connected to the cpu and then
@@ -19,7 +20,6 @@ void connect_ppi(ppi_8255 * ppi, Sim8085 * simulator, int base_address);
 int get_ppi_port_value(ppi_8255 * ppi, int port_no); 
 
 void * ppi_thread_handler(void * t_info); //each ppi device has its own thread
-void ppi_logic(ppi_8255 * ppi); 
 
 void initialize_cpu_mutex();
 #endif

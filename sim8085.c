@@ -1,5 +1,10 @@
 #include "sim8085.h"
 
+pthread_cond_t io_signal = PTHREAD_COND_INITIALIZER;
+pthread_cond_t io_ack = PTHREAD_COND_INITIALIZER;
+pthread_mutex_t io_signal_mutex;
+pthread_mutex_t io_ack_mutex;
+
 const char * reg_map = "ABCDEHL", * flags_map = "S Z * AC * P * CY";
 
 int GETHLADDRESS(Sim8085 * sim)  {
@@ -656,11 +661,36 @@ void RET_ZERO(Sim8085 * sim, int v) {
     }
 }
 
-void IN(Sim8085 * sim) {
-    sim->REGISTER[GETREGCHAR('A')] = sim->IOPORTS[sim->RAM[sim->PC++] & 0XFF];
+void delay_loop() {
+    for (int i = 0; i < 10000000; ++i) ; //sync
 }
-void OUT(Sim8085 * sim) {
-    sim->IOPORTS[sim->RAM[sim->PC++] & 0XFF] = sim->REGISTER[GETREGCHAR('A')];
+int read_signal(Sim8085 * sim, int address) {
+    sim->address_latch = address;
+    sim->iow = 0;
+    pthread_mutex_lock(&io_signal_mutex);
+    pthread_cond_broadcast(&io_signal);
+    pthread_mutex_unlock(&io_signal_mutex);
+    delay_loop(); //place your plate for your food
+    return sim->data_latch;
+}
+void write_signal(Sim8085 * sim, int address, int data) {
+    sim->address_latch = address;
+    sim->data_latch = data;
+    sim->iow = 1;
+    pthread_mutex_lock(&io_signal_mutex);
+    pthread_cond_broadcast(&io_signal);
+    pthread_mutex_unlock(&io_signal_mutex);
+    delay_loop();
+}
+void IN(Sim8085 * sim) {
+    int addr = sim->RAM[sim->PC++] & 0XFF; 
+    int data = read_signal(sim, addr);
+    sim->REGISTER[GETREGCHAR('A')] = data;
+}
+void OUT(Sim8085 * sim) { 
+    int addr = sim->RAM[sim->PC++] & 0XFF; 
+    int value = sim->REGISTER[GETREGCHAR('A')];
+    write_signal(sim, addr, value);
 }
 void RIM(Sim8085 * sim) {
     int val = (sim->interrupts_enabled << 3) |
@@ -792,10 +822,12 @@ void loadprogram(Sim8085 * sim, int start_addr, ProgramFile * program_file) {
     sim->interrupts_enabled = 0;
     sim->rst5_5_enable = sim->rst6_5_enable = sim->rst7_5_enable = 0;
     sim->rst5_5 = sim->rst6_5 = sim->rst7_5 = sim->trap = sim->intr = 0;
+    sim->iow = sim->address_latch = sim->data_latch = 0;
     sim->intr_opcode_latch = 0;
     sim->HALT = 0;
     sim->PC = sim->START_ADDRESS = start_addr;
     sim->SP = 0xFFFF;
+    
     for (int i = 0; i < (1 << 16); ++i) sim->line_no[i] = -1; //initially each address in RAM is not associated to any line of the program_file
     program_parse(program_file, &sim->byte_list, &sim->labels, &sim->err_list, sim->START_ADDRESS);
     if (sim->err_list.count == 0) {
@@ -838,15 +870,6 @@ int getIL(Sim8085 * sim) {
         printf("addr: %d, Fallthrough : Executing instruction was not written by user\n", sim->PC);
     }
     return sim->line_no[sim->PC];
-}
-int readIO(Sim8085 * sim, int addr) {
-    assert(addr >= 0 && addr <= 0xFF);
-    return sim->IOPORTS[addr];
-}
-void writeIO(Sim8085 * sim, int addr, int val) {
-    assert(addr >= 0 && addr <= 0xFF);
-    assert(val >= 0 && val <= 0xFF);
-    sim->IOPORTS[addr] = val;
 }
 int readMemory(Sim8085 * sim, int addr) {
     assert(addr >= 0 && addr < (1 << 16));

@@ -2,9 +2,14 @@
 #define SIM_8085_H
 #include "all.h"
 #include "program.h"
+#include <pthread.h>
+extern pthread_cond_t io_signal;
+extern pthread_cond_t io_ack;
+extern pthread_mutex_t io_signal_mutex;
+extern pthread_mutex_t io_ack_mutex;
 typedef struct {
     ///FLAGS REGISTER IS IN REGISTER[7]
-    int RAM[1 << 16], REGISTER[8], SP, PC, START_ADDRESS, IOPORTS[1 << 8];
+    int RAM[1 << 16], REGISTER[8], SP, PC, START_ADDRESS;
     int line_no[1 << 16];
     ProgramFile lines;
     ErrorList err_list;
@@ -16,6 +21,7 @@ typedef struct {
     int rst7_5_enable, rst6_5_enable, rst5_5_enable;
     int trap, rst7_5, rst6_5, rst5_5, intr; //interrupt pins
     int intr_opcode_latch; //the non_vectored_address i.e. provided by external devices, to run their own service routine
+    int iow ,address_latch, data_latch; //if iow = 1, data is written else read
 } Sim8085; ///struct end
 
 int GETHLADDRESS(Sim8085 * ) ;
@@ -124,11 +130,13 @@ void BRANCH_TO_SERVICE_ROUTINE
 void checkInterrupts(Sim8085 * sim);
 
 int getIL(Sim8085 * sim);
-int readIO(Sim8085 * sim, int addr);
-void writeIO(Sim8085 * sim, int addr, int val);
 int readMemory(Sim8085 * sim, int addr);
 void writeMemory(Sim8085 * sim, int addr, int val);
 
 int hasHalted(Sim8085 * sim);
 int programSize(Sim8085 * sim);
+
+int read_signal(Sim8085 * sim, int address);
+void write_signal(Sim8085 * sim, int address, int data);
+void delay_loop(); //separate c file maybe ?
 #endif
