@@ -180,8 +180,8 @@ void resolve_line(const char * line, LabelList * labels, ErrorList * err_list, i
                     ++*to_res_n;
                 }
             }
-            *addr += 3;
         }
+        *addr += 3;
     } else {
         sprintf(err_list->err_list[err_list->count], "Undefined instruction: ");
         strncat(err_list->err_list[err_list->count], line + tok_s, tok_e - tok_s);

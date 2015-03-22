@@ -786,8 +786,20 @@ void loadprogram(Sim8085 * sim, int start_addr, ProgramFile * program_file) {
             int paddr = sim->byte_list.bytes[i][2];
             sim->RAM[paddr] = sim->byte_list.bytes[i][0];//load opcode value
             sim->line_no[paddr] = sim->byte_list.bytes[i][1]; //load line number of the program from which this code was extracted
+            char value[3], ad[5];
+            //printf("%d ", paddr);
+            //value[2] = 0;
+            //value[1] = hexchar(sim->RAM[paddr] & 0xF); 
+            //value[0] = hexchar((sim->RAM[paddr] >> 4) & 0xF); 
+            //ad[4] = 0;
+            //ad[3] = hexchar(paddr & 0xF); 
+            //ad[2] = hexchar((paddr >> 4) & 0xF); 
+            //ad[1] = hexchar((paddr >> 8) & 0xF);
+            //ad[0] = hexchar((paddr >> 12) & 0xF);
+            //printf("Line: %d Addr: %s val: %s\n", sim->line_no[paddr], ad, value);
         }
     }
+
 }
 void stat(Sim8085 * sim) {
     printf("sim->PC: %d, sim->SP: %d\n", sim->PC, sim->SP);
@@ -806,7 +818,7 @@ int hasHalted(Sim8085 * sim) {
 int getIL(Sim8085 * sim) {
     assert(sim->PC <= 0xFFFF);
     if (sim->line_no[sim->PC] < 0) {
-        printf("Fallthrough : Executing instruction was not written by user\n");
+        printf("addr: %d, Fallthrough : Executing instruction was not written by user\n", sim->PC);
     }
     return sim->line_no[sim->PC];
 }
