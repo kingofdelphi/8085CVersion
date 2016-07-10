@@ -260,7 +260,7 @@ int ss(Sim8085 * sim, int a, int b, int bits, int with_carry) {
 int mysub(Sim8085 * sim, int a, int b, int with_carry, int ecarry) {
     int r = ss(sim, a, b, 8, with_carry);
     int r2 = ss(sim, a & 0xF, b & 0xF, 4, with_carry);
-    if ((r2 > 4) & 1) setAF(sim); else resetAF(sim); 
+    if ((r2 >> 4) & 1) setAF(sim); else resetAF(sim); 
     updateflags(sim, r, ecarry);
     return r & 0xFF;
 }
