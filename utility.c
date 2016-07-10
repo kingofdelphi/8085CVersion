@@ -42,13 +42,7 @@ int GETADDRESS(int MB, int LB) {
 int GETRP(int v) {
     return (v >> 4) & 0x03;
 }
-///8-bit twos complement
-int b8twos(int n) {
-    return (((~n) & 0xFF) + 1);
-}
-int b4twos(int n) {
-    return (((~n) & 0xF) + 1);
-}
+
 int popcount(int n) {
     n &= 0xFF;
     int c = 0;

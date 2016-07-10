@@ -24,3 +24,6 @@ utility.o: utility.c utility.h
 
 8255ppi.o: 8255ppi.c 8255ppi.h
 	$(CC) 8255ppi.c -c -std=c99
+
+clean:
+	rm *.o sim8085

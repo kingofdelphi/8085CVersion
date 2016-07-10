@@ -230,20 +230,49 @@ void DCX(Sim8085 * sim, int v) {
     SETREGPAIR(sim, reg_pair, op);
 }
 
+//if a >= b, overflow occurs else no overflow
+int sub(int a, int b, int bits) {
+    bits = (1 << bits) - 1;
+    a &= bits;
+    b &= bits;
+    b = bits - b;
+    b++;
+    return a + b;
+}
+
+//subtracts b from a with or without carry, bit at "bits" position 
+//bit is set if borrow occurs else reset
+int ss(Sim8085 * sim, int a, int b, int bits, int with_carry) {
+    int res = sub(a, b, bits);
+    int borrow = ((res >> bits) & 1) ^ 1;
+    int mx = (1 << bits) - 1;
+    res &= mx;
+    if (with_carry) {
+        int prevcarry = getcarry(sim);
+        res = sub(res, prevcarry, bits);
+        borrow |= ((res >> bits) & 1) ^ 1;
+        res &= mx;
+    }
+    res |= (borrow << bits);
+    return res;
+}
+
+int mysub(Sim8085 * sim, int a, int b, int with_carry, int ecarry) {
+    int r = ss(sim, a, b, 8, with_carry);
+    int r2 = ss(sim, a & 0xF, b & 0xF, 4, with_carry);
+    if ((r2 > 4) & 1) setAF(sim); else resetAF(sim); 
+    updateflags(sim, r, ecarry);
+    return r & 0xFF;
+}
 
 /// does not affect carry flag
 void DCR(Sim8085 * sim, int v) {
     int dest = getdest(v);
     int * target = ISMEM(dest) ? &sim->RAM[GETHLADDRESS(sim)] : &sim->REGISTER[regidx(dest)];
-    int op = *target;
-    *target += b8twos(1); ///SUBTRACT -1 = ADD TWOS complement OF 1
-    *target &= 0xFF;
-    updateflags(sim, *target, 0);
-    if ((op & 0xF) + b4twos(1) > 0xF) resetAF(sim); ///borrow from the higher nibble to lower nibble
-    else setAF(sim);
+    *target = mysub(sim, *target, 1, 0, 0);
 }
 
-///with or without carry
+
 void SUB(Sim8085 * sim, int v) {
     int with_carry = (v >> 3) & 1;
     int op1 = sim->REGISTER[GETREGCHAR('A')] & 0xFF;
@@ -254,17 +283,8 @@ void SUB(Sim8085 * sim, int v) {
     } else {
         op2 = sim->REGISTER[regidx(id)] & 0xFF;
     }
-    int prevcarry = getcarry(sim);
-    if (with_carry) op2 += prevcarry;
-    int res = op1 + b8twos(op2);
-    sim->REGISTER[GETREGCHAR('A')] = res & 0xFF;
-    updateflags(sim, res, 1);
-    op2 &= 0xF;
-    if (with_carry) op2 += prevcarry;
-    int nib = (op1 & 0xF) + b4twos(op2 & 0xF);
-    if (nib > 0xF) resetAF(sim); ///now borrow from the higher nibble
-    else setAF(sim); ///borrow
-    complement_carry(sim);
+    int r = mysub(sim, op1, op2, with_carry, 1);
+    sim->REGISTER[GETREGCHAR('A')] = r;
 }
 
 ///with or without borrow
@@ -272,17 +292,8 @@ void SUI(Sim8085 * sim, int v) {
     int with_carry = (v >> 3) & 1;
     int op1 = sim->REGISTER[GETREGCHAR('A')] & 0xFF;
     int op2 = sim->RAM[sim->PC++] & 0xFF;;
-    int prevcarry = getcarry(sim);
-    if (with_carry) op2 += prevcarry;
-    int res = op1 + b8twos(op2);
-    sim->REGISTER[GETREGCHAR('A')] = res & 0xFF;
-    updateflags(sim, res, 1);
-    op2 &= 0xF;
-    if (with_carry) op2 += prevcarry;
-    int nib = (op1 & 0xF) + b4twos(op2 & 0xF);
-    if (nib > 0xF) resetAF(sim); ///now borrow from the higher nibble
-    else setAF(sim); ///borrow
-    complement_carry(sim);
+    int r = mysub(sim, op1, op2, with_carry, 1);
+    sim->REGISTER[GETREGCHAR('A')] = r;
 }
 
 void DAA(Sim8085 * sim) {
@@ -351,7 +362,7 @@ void ANA(Sim8085 * sim, int v) {
     }
     sim->REGISTER[GETREGCHAR('A')] &= 0xFF;
     sim->REGISTER[GETREGCHAR('A')] &= with;
-    setAF(sim);
+    resetAF(sim);
     resetcarry(sim);
     updateflags(sim, sim->REGISTER[GETREGCHAR('A')], 0);
 }
@@ -359,7 +370,7 @@ void ANI(Sim8085 * sim) {
     int with = sim->RAM[sim->PC++] & 0xFF;
     sim->REGISTER[GETREGCHAR('A')] &= 0xFF;
     sim->REGISTER[GETREGCHAR('A')] &= with;
-    setAF(sim);
+    resetAF(sim);
     resetcarry(sim);
     updateflags(sim, sim->REGISTER[GETREGCHAR('A')], 0);
 }
@@ -452,24 +463,14 @@ void CMP(Sim8085 * sim, int v) {
     }
     sim->REGISTER[GETREGCHAR('A')] &= 0xFF;
     int op1 = sim->REGISTER[GETREGCHAR('A')];
-    int d = op1 + b8twos(op2);
-    updateflags(sim, d, 1);
-    int nib = (op1 & 0xF) + b4twos(op2 & 0xF);
-    if (nib > 0xF) resetAF(sim);
-    else setAF(sim);
-    complement_carry(sim);
+    mysub(sim, op1, op2, 0, 1);
 }
 
 void CPI(Sim8085 * sim) {
     int op2 = sim->RAM[sim->PC++] & 0xFF;
     sim->REGISTER[GETREGCHAR('A')] &= 0xFF;
     int op1 = sim->REGISTER[GETREGCHAR('A')];
-    int d = op1 + b8twos(op2);
-    updateflags(sim, d, 1);
-    int nib = (op1 & 0xF) + b4twos(op2 & 0xF);
-    if (nib > 0xF) resetAF(sim);
-    else setAF(sim);
-    complement_carry(sim);
+    mysub(sim, op1, op2, 0, 1);
 }
 
 void BRANCH(Sim8085 * sim, int call) {
